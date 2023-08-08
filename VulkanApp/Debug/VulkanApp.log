@@ -1,4 +1,4 @@
-﻿  VulkanWindow.cpp
+﻿  VulkanRenderer.cpp
   main.cpp
   Generating Code...
 LINK : warning LNK4098: defaultlib 'MSVCRT' conflicts with use of other libs; use /NODEFAULTLIB:library

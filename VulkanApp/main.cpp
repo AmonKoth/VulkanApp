@@ -9,18 +9,27 @@
 #include "VulkanRenderer.h"
 #include "VulkanWindow.h"
 
+GLFWwindow* mainWindow = nullptr;
+
+VulkanRenderer vulkanRenderer;
 
 int main()
 {
 	VulkanWindow* window = new VulkanWindow("MainWindow",800,600);
 
-	GLFWwindow* mainWindow = window->GetWindow();
+	mainWindow = window->GetWindow();
+
+	if (vulkanRenderer.init(mainWindow) == EXIT_FAILURE)
+	{
+		return EXIT_FAILURE;
+	}
 
 	while (!glfwWindowShouldClose(mainWindow))
 	{
 		glfwPollEvents();
 	}
 
+	vulkanRenderer.cleanUp();
 	window->DestoryWindow();
 	window = nullptr;
 
