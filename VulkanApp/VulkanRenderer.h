@@ -5,6 +5,8 @@
 
 #include <stdexcept>
 #include <vector>
+#include <set>
+#include <algorithm>
 
 #include "Utilities.h"
 
@@ -25,6 +27,7 @@ private:
 	GLFWwindow* window;
 
 	//Vulkan Components:
+	//Main
 	VkInstance instance;
 
 	struct {
@@ -33,6 +36,14 @@ private:
 	} mainDevice;
 
 	VkQueue graphicsQueue;
+	VkQueue presentationQueue;
+	VkSurfaceKHR surface;
+	VkSwapchainKHR swapchain;
+	std::vector<SwapchainImage> swapchainImages;
+
+	//Utility
+	VkFormat swapChainImageFormat;
+	VkExtent2D swapChainExtent;
 
 	const std::vector<const char*> validationLayers = {
 		"VK_LAYER_KHRONOS_validation"
@@ -52,6 +63,8 @@ private:
 	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void createLogicalDevice();
 	void setupDebugMessenger();
+	void createSurface();
+	void createSwapChain();
 
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
 		const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
@@ -63,6 +76,7 @@ private:
 
 	//Support Functions
 	bool checkInstanceExtensionSupport(std::vector<const char*>* checkExtensions);
+	bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 	bool checkDeviceSuitable(VkPhysicalDevice device);
 	bool checkValidationLayerSupport();
 	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSverity,
@@ -74,7 +88,15 @@ private:
 	}
 
 	QueueFamilyIndices getQueueFamiles(VkPhysicalDevice device);
+	SwapChainDetails getSwapChainDetails(VkPhysicalDevice device);
 
+	//Choose Funcionts
+	VkSurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &surfaceFormats);
+	VkPresentModeKHR chooseBestPresentationMode(const std::vector<VkPresentModeKHR> presentationModes);
+	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& surfaceCapabilities);
+
+	//Support Create Functions
+	VkImageView createImageView(VkImage image, VkFormat imageformat, VkImageAspectFlags aspectFlags);
 
 };
 
