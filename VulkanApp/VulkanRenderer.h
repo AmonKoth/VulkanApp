@@ -20,12 +20,15 @@ public:
 	VulkanRenderer();
 	
 	int init(GLFWwindow* newWindow);
+	void draw();
 	void cleanUp();
 
 	~VulkanRenderer();
 
 private:
 	GLFWwindow* window;
+
+	int currentFrame = 0;
 
 	//Vulkan Components:
 	//Main
@@ -40,12 +43,23 @@ private:
 	VkQueue presentationQueue;
 	VkSurfaceKHR surface;
 	VkSwapchainKHR swapchain;
+
 	std::vector<SwapchainImage> swapchainImages;
+	std::vector<VkFramebuffer> swapchainFramebuffers;
+	std::vector<VkCommandBuffer> commandBuffers;
 
 	//Pipeline
 	VkPipeline graphicsPipeline;
 	VkPipelineLayout pipelineLayout;
 	VkRenderPass renderPass;
+
+	//Pools
+	VkCommandPool graphicsCommandPool;
+
+	//Syncronisation
+	std::vector<VkSemaphore> imageAvailable;
+	std::vector<VkSemaphore> renderFinished;
+	std::vector<VkFence> drawFences;
 
 	//Utility
 	VkFormat swapChainImageFormat;
@@ -65,6 +79,7 @@ private:
 
 
 	//Vulkan Functions:
+	//Create Functions
 	void createInstance();
 	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
 	void createLogicalDevice();
@@ -73,7 +88,14 @@ private:
 	void createSwapChain();
 	void createRenderPass();
 	void createGraphicsPipeline();
+	void createFrameBuffers();
+	void createCommandPool();
+	void createCommandBuffers();
+	void createSynchronisation();
+	
 
+	//Record functions
+	void recordCommand();
 
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
 		const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
