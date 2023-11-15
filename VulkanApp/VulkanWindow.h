@@ -16,7 +16,7 @@ public:
 	
 	~VulkanWindow();
 
-	void DestoryWindow();
+	void DestroyWindow();
 	GLFWwindow* GetWindow() {return mainWindow; }
 };
 

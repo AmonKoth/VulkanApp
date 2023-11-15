@@ -31,7 +31,7 @@ int main()
 	}
 
 	vulkanRenderer.cleanUp();
-	window->DestoryWindow();
+	window->DestroyWindow();
 	window = nullptr;
 
 	return 0;

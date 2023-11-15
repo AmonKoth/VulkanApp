@@ -10,8 +10,7 @@
 #include <array>
 
 #include "Utilities.h"
-
-
+#include "Mesh.h"
 
 class VulkanRenderer
 {
@@ -30,6 +29,8 @@ private:
 
 	int currentFrame = 0;
 
+	//Scene Objects
+	std::vector<Mesh> meshList;
 	//Vulkan Components:
 	//Main
 	VkInstance instance;

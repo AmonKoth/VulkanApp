@@ -1,4 +1,6 @@
 #include "VulkanRenderer.h"
+#include "Mesh.h"
+
 
 VulkanRenderer::VulkanRenderer()
 {
@@ -20,6 +22,39 @@ int VulkanRenderer::init(GLFWwindow* newWindow)
         createGraphicsPipeline();
         createFrameBuffers();
         createCommandPool();
+
+        //Create mesh
+
+        //Vertex Data
+        std::vector<Vertex> meshVertices1 = {
+            {{-0.1,-0.4,0.0 },{1.0,0.0,0.0}},    //0
+            {{-0.1,0.4,0.0 },{0.0,1.0,0.0}},     //1
+            {{-0.9,0.4,0.0 },{0.0,0.0,1.0}},    //2
+            {{-0.9,-0.4,0.0 },{1.0,1.0,0.0}},   //3
+        };
+
+        std::vector<Vertex> meshVertices2 = {
+        {{0.9,-0.4,0.0 },{1.0,0.0,0.0}},    //0
+        {{0.9,0.2,0.0 },{0.0,1.0,0.0}},     //1
+        {{0.1,0.3,0.0 },{0.0,0.0,1.0}},    //2
+        {{0.1,-0.3,0.0 },{1.0,1.0,0.0}},   //3
+        };
+
+        //Index Data
+        std::vector<uint32_t> meshIndices = {
+            0,1,2,
+            2,3,0
+        };
+
+        
+        Mesh firstMesh = Mesh(mainDevice.physicalDevice, mainDevice.logicalDevice,
+            graphicsQueue, graphicsCommandPool, &meshVertices1 , &meshIndices);
+        Mesh secondMesh = Mesh(mainDevice.physicalDevice, mainDevice.logicalDevice,
+            graphicsQueue, graphicsCommandPool, &meshVertices2, &meshIndices);
+
+        meshList.push_back(firstMesh);
+        meshList.push_back(secondMesh);
+
         createCommandBuffers();
         recordCommand();
         createSynchronisation();
@@ -100,6 +135,11 @@ void VulkanRenderer::cleanUp()
     }
     vkDestroySwapchainKHR(mainDevice.logicalDevice, swapchain, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
+
+    for (size_t i = 0; i < meshList.size(); i++)
+    {
+        meshList[i].destroyBuffers();
+    }
     vkDestroyDevice(mainDevice.logicalDevice,nullptr);
     if (enableValidationLayers)
     {
@@ -416,14 +456,34 @@ void VulkanRenderer::createGraphicsPipeline()
 
     VkPipelineShaderStageCreateInfo shaderStages[] = { vertexCreateInfo , fragmentCreateInfo };
 
-    
+    // Vertex data as a whole
+
+    VkVertexInputBindingDescription bindingDescription = {};
+    bindingDescription.binding = 0; //Can bind mult streams of data
+    bindingDescription.stride = sizeof(Vertex); //Size of single vertex object
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //Index: Move on to next vertex, Instance: move to a vertex for the next instance(applies if you draw a lots of same object)
+
+    std::array<VkVertexInputAttributeDescription, 2> attributeDiscriptions;
+
+    attributeDiscriptions[0].binding = 0; // Which binding the date is at(should be same as above)
+    attributeDiscriptions[0].location = 0; //value of the location;
+    attributeDiscriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDiscriptions[0].offset = offsetof(Vertex, pos);
+
+    //Color Attrib
+
+    attributeDiscriptions[1].binding = 0; // Which binding the date is at(should be same as above)
+    attributeDiscriptions[1].location = 1; //value of the location;
+    attributeDiscriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDiscriptions[1].offset = offsetof(Vertex, col);
+
     //Create Pipeline
     VkPipelineVertexInputStateCreateInfo vertexInputCreateInfo = {};
     vertexInputCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputCreateInfo.vertexBindingDescriptionCount = 0;
-    vertexInputCreateInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputCreateInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputCreateInfo.pVertexAttributeDescriptions = nullptr;
+    vertexInputCreateInfo.vertexBindingDescriptionCount = 1;
+    vertexInputCreateInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputCreateInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDiscriptions.size());
+    vertexInputCreateInfo.pVertexAttributeDescriptions = attributeDiscriptions.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = { };
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -672,10 +732,18 @@ void VulkanRenderer::recordCommand()
 
                 //Bind pipeline to be used in render pass
                 vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-                //Normally when you load a model you get the vertices first but for now 3 is fine
+                
+                for (size_t j = 0; j < meshList.size(); j++)
+                {
+                    VkBuffer vertexBuffers[] = { meshList[j].getVertexBuffer()};
+                    VkDeviceSize offsets[] = { 0 };
+                    vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
 
-                //Execute pipeline
-                vkCmdDraw(commandBuffers[i], 3, 1, 0, 0); 
+                    vkCmdBindIndexBuffer(commandBuffers[i], meshList[j].getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+                    //Execute pipeline
+                    vkCmdDrawIndexed(commandBuffers[i], meshList[j].getIndexCount(), 1, 0, 0, 0);
+                }
             //End renderPass
             vkCmdEndRenderPass(commandBuffers[i]);
        //End recording

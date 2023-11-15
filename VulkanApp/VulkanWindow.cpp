@@ -18,7 +18,7 @@ VulkanWindow::~VulkanWindow()
 
 }
 
-void VulkanWindow::DestoryWindow()
+void VulkanWindow::DestroyWindow()
 {
 	glfwDestroyWindow(mainWindow);
 	mainWindow = nullptr;
