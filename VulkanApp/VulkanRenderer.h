@@ -3,6 +3,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <stdexcept>
 #include <vector>
 #include <set>
@@ -19,6 +22,9 @@ public:
 	VulkanRenderer();
 	
 	int init(GLFWwindow* newWindow);
+
+	void updateModel(int modelID, glm::mat4 newModel);
+
 	void draw();
 	void cleanUp();
 
@@ -31,6 +37,13 @@ private:
 
 	//Scene Objects
 	std::vector<Mesh> meshList;
+
+	//Scen Settings
+	//Model View Projection
+	struct UBOViewProjection {
+		glm::mat4 projection;
+		glm::mat4 view;
+	}uboViewProjection;
 	//Vulkan Components:
 	//Main
 	VkInstance instance;
@@ -49,6 +62,23 @@ private:
 	std::vector<VkFramebuffer> swapchainFramebuffers;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	//Descriptors
+	VkDescriptorSetLayout descriptorSetLayout;
+
+	VkDescriptorPool descriptorPool;
+
+	std::vector<VkDescriptorSet> descriptorSets;
+
+	std::vector<VkBuffer> vpUniformBuffer;
+	std::vector<VkDeviceMemory> vpUniformBufferMemory;
+
+	std::vector<VkBuffer> modelDynamicUniformBuffer;
+	std::vector<VkDeviceMemory> modelDynamicUniformBufferMemory;
+
+	VkDeviceSize minUniformBufferOffset;
+	size_t modelUniformAllignment;
+	UBOModel* modelTransferSpace;
+
 	//Pipeline
 	VkPipeline graphicsPipeline;
 	VkPipelineLayout pipelineLayout;
@@ -65,6 +95,7 @@ private:
 	//Utility
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
+
 
 	const std::vector<const char*> validationLayers = {
 		"VK_LAYER_KHRONOS_validation"
@@ -88,12 +119,18 @@ private:
 	void createSurface();
 	void createSwapChain();
 	void createRenderPass();
+	void createDescriptorSetLayout();
 	void createGraphicsPipeline();
 	void createFrameBuffers();
 	void createCommandPool();
 	void createCommandBuffers();
 	void createSynchronisation();
 	
+	void createUniformBuffers();
+	void createDescriptorPool();
+	void createDescriptorSets();
+
+	void updateUniformBuffers(uint32_t imageIndex);
 
 	//Record functions
 	void recordCommand();
@@ -104,6 +141,8 @@ private:
 	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
 	//Get Funcitons
 	void getPysicalDevice();
+
+	void allocateDynamicBufferTransferSpace();
 	std::vector<const char*> getRequriredExtensions();
 
 	//Support Functions

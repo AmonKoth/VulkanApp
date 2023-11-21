@@ -1,2 +1,3 @@
-﻿  VulkanRenderer.cpp
+﻿  main.cpp
+C:\VSProjects\Vulkan\VulkanApp\VulkanApp\main.cpp(36,13): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
   VulkanApp.vcxproj -> C:\VSProjects\Vulkan\VulkanApp\VulkanApp\Debug\VulkanApp.exe
