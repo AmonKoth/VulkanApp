@@ -1,8 +1,12 @@
-﻿  VulkanRenderer.cpp
-  main.cpp
+﻿  Mesh.cpp
+  VulkanRenderer.cpp
+C:\VSProjects\Vulkan\VulkanApp\VulkanApp\VulkanRenderer.cpp(81,17): warning C4018: '>=': signed/unsigned mismatch
   Generating code
-  662 of 815 functions (81.2%) were compiled, the rest were copied from previous compilation.
-    476 functions were new in current compilation
-    26 functions had inline decision re-evaluated but remain unchanged
+  550 of 1292 functions (42.6%) were compiled, the rest were copied from previous compilation.
+    459 functions were new in current compilation
+    114 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
+main.obj : warning LNK4205: '' is missing current debugging information for referencing module; linking object as if no debug info
+MSVCRT.lib(loadcfg.obj) : warning LNK4020: a type record in 'c:\vsprojects\vulkan\vulkanapp\vulkanapp\release\vc143.pdb' is corrupted; some symbols and types may not be accessible from the debugger
+ucrt.lib(api-ms-win-crt-string-l1-1-0.dll) : warning LNK4020: a type record in 'c:\vsprojects\vulkan\vulkanapp\vulkanapp\release\vc143.pdb' is corrupted; some symbols and types may not be accessible from the debugger
   VulkanApp.vcxproj -> C:\VSProjects\Vulkan\VulkanApp\VulkanApp\Release\VulkanApp.exe

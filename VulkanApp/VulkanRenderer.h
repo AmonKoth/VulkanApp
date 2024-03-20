@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <array>
 
+#include "stb_image.h"
+
 #include "Utilities.h"
 #include "Mesh.h"
 
@@ -62,9 +64,15 @@ private:
 	std::vector<VkFramebuffer> swapchainFramebuffers;
 	std::vector<VkCommandBuffer> commandBuffers;
 
+	VkImage depthBufferImage;
+	VkDeviceMemory depthBufferImageMemory;
+	VkImageView depthBufferImageView;
+	VkFormat depthFormat;
+
 	//Descriptors
 	VkDescriptorSetLayout descriptorSetLayout;
-
+	VkPushConstantRange pushConstantRange;
+		
 	VkDescriptorPool descriptorPool;
 
 	std::vector<VkDescriptorSet> descriptorSets;
@@ -75,9 +83,14 @@ private:
 	std::vector<VkBuffer> modelDynamicUniformBuffer;
 	std::vector<VkDeviceMemory> modelDynamicUniformBufferMemory;
 
-	VkDeviceSize minUniformBufferOffset;
-	size_t modelUniformAllignment;
-	UBOModel* modelTransferSpace;
+	//For Dynamic Uniform buffers not in use for now
+	//VkDeviceSize minUniformBufferOffset;
+	//size_t modelUniformAllignment;
+	//UBOModel* modelTransferSpace;
+
+	//Assets (not optimal, have single device memory and images just refrences offsets in it)
+	std::vector<VkImage> textureImages;
+	std::vector<VkDeviceMemory> textureImagesMemory;
 
 	//Pipeline
 	VkPipeline graphicsPipeline;
@@ -120,7 +133,9 @@ private:
 	void createSwapChain();
 	void createRenderPass();
 	void createDescriptorSetLayout();
+	void createPushConstantRange();
 	void createGraphicsPipeline();
+	void createDepthBufferImage();
 	void createFrameBuffers();
 	void createCommandPool();
 	void createCommandBuffers();
@@ -133,7 +148,7 @@ private:
 	void updateUniformBuffers(uint32_t imageIndex);
 
 	//Record functions
-	void recordCommand();
+	void recordCommand(uint32_t currentImage);
 
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
 		const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
@@ -142,7 +157,8 @@ private:
 	//Get Funcitons
 	void getPysicalDevice();
 
-	void allocateDynamicBufferTransferSpace();
+	//For Dynamic Uniform Bufferss
+	//void allocateDynamicBufferTransferSpace();
 	std::vector<const char*> getRequriredExtensions();
 
 	//Support Functions
@@ -165,10 +181,18 @@ private:
 	VkSurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &surfaceFormats);
 	VkPresentModeKHR chooseBestPresentationMode(const std::vector<VkPresentModeKHR> presentationModes);
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& surfaceCapabilities);
+	VkFormat chooseSupportedFormat(const std::vector<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags  featureFlags);
 
 	//Support Create Functions
 	VkImageView createImageView(VkImage image, VkFormat imageformat, VkImageAspectFlags aspectFlags);
 	VkShaderModule createShaderModule(const std::vector<char> &code);
+	VkImage createImage(uint32_t witdh, uint32_t height, VkFormat format, VkImageTiling tiling,
+		VkImageUsageFlags useFlags, VkMemoryPropertyFlags propFlags, VkDeviceMemory* imageMemory);
+
+	int createTexture(std::string fileName);
+
+	//Loader Funcitons
+	stbi_uc* loadTextureFile(std::string fileName, int* width, int* height, VkDeviceSize* imageSize);
 
 };
 

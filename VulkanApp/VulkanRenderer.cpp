@@ -18,30 +18,34 @@ int VulkanRenderer::init(GLFWwindow* newWindow)
         getPysicalDevice();
         createLogicalDevice();
         createSwapChain();
+        createDepthBufferImage();
         createRenderPass();
         createDescriptorSetLayout();
+        createPushConstantRange();
         createGraphicsPipeline();
         createFrameBuffers();
         createCommandPool();
 
+        int firstTexture = createTexture("firsttexture.jpg");
+
         uboViewProjection.projection = glm::perspective(glm::radians(45.0f), (float)swapChainExtent.width / (float)swapChainExtent.height,0.1f, 100.0f);
-        uboViewProjection.view = glm::lookAt(glm::vec3(0.0f, 0.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        uboViewProjection.view = glm::lookAt(glm::vec3(3.0f, 0.0f, -1.0f), glm::vec3(0.0f, 0.0f, -4.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         uboViewProjection.projection[1][1] *= -1;
         //Create mesh
 
         //Vertex Data
         std::vector<Vertex> meshVertices1 = {
             {{-0.4, 0.4,0.0 },{1.0,0.0,0.0}},    //0
-            {{-0.4,-0.4,0.0 },{0.0,1.0,0.0}},     //1
-            {{ 0.4,-0.4,0.0 },{0.0,0.0,1.0}},    //2
-            {{ 0.4, 0.4,0.0 },{1.0,1.0,0.0}},   //3
+            {{-0.4,-0.4,0.0 },{1.0,0.0,0.0}},     //1
+            {{ 0.4,-0.4,0.0 },{1.0,0.0,0.0}},    //2
+            {{ 0.4, 0.4,0.0 },{1.0,0.0,0.0}},   //3
         };
 
         std::vector<Vertex> meshVertices2 = {
-            {{-0.25, 0.6,0.0 },{1.0,0.0,0.0}},    //0
+            {{-0.25, 0.6,0.0 },{0.0,1.0,0.0}},    //0
             {{-0.25,-0.6,0.0 },{0.0,1.0,0.0}},     //1
-            {{ 0.25,-0.6,0.0 },{0.0,0.0,1.0}},    //2
-            {{ 0.25, 0.6,0.0 },{1.0,1.0,0.0}},   //3
+            {{ 0.25,-0.6,0.0 },{0.0,1.0,0.0}},    //2
+            {{ 0.25, 0.6,0.0 },{0.0,1.0,0.0}},   //3
         };
 
         //Index Data
@@ -60,11 +64,10 @@ int VulkanRenderer::init(GLFWwindow* newWindow)
         meshList.push_back(secondMesh);
 
         createCommandBuffers();
-        allocateDynamicBufferTransferSpace();
+        //allocateDynamicBufferTransferSpace();
         createUniformBuffers();
         createDescriptorPool();
         createDescriptorSets();
-        recordCommand();
         createSynchronisation();
 
     }
@@ -85,12 +88,13 @@ void VulkanRenderer::draw()
     // Get Next Image
     uint32_t imageIndex;
     vkAcquireNextImageKHR(mainDevice.logicalDevice, swapchain, std::numeric_limits<uint64_t>::max(), imageAvailable[currentFrame], VK_NULL_HANDLE, &imageIndex);
-    updateUniformBuffers(imageIndex);
 
     vkWaitForFences(mainDevice.logicalDevice, 1, &drawFences[currentFrame], VK_TRUE, std::numeric_limits<uint64_t>::max());
     
     vkResetFences(mainDevice.logicalDevice, 1, &drawFences[currentFrame]);
 
+    recordCommand(imageIndex);
+    updateUniformBuffers(imageIndex);
 
     //SUBMIT Command Buffer to Render
     VkSubmitInfo submitInfo = {  };
@@ -132,7 +136,17 @@ void VulkanRenderer::cleanUp()
 {
     vkDeviceWaitIdle(mainDevice.logicalDevice);
 
-    _aligned_free(modelTransferSpace);
+    //_aligned_free(modelTransferSpace);
+
+    for (size_t i =0; i<textureImages.size(); i++)
+    {
+        vkDestroyImage(mainDevice.logicalDevice, textureImages[i], nullptr);
+        vkFreeMemory(mainDevice.logicalDevice, textureImagesMemory[i], nullptr);
+    }
+
+    vkDestroyImageView(mainDevice.logicalDevice, depthBufferImageView, nullptr);
+    vkDestroyImage(mainDevice.logicalDevice, depthBufferImage, nullptr);
+    vkFreeMemory(mainDevice.logicalDevice, depthBufferImageMemory, nullptr);
 
     vkDestroyDescriptorPool(mainDevice.logicalDevice, descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(mainDevice.logicalDevice, descriptorSetLayout,nullptr);
@@ -140,8 +154,8 @@ void VulkanRenderer::cleanUp()
     {
         vkDestroyBuffer(mainDevice.logicalDevice, vpUniformBuffer[i], nullptr);
         vkFreeMemory(mainDevice.logicalDevice, vpUniformBufferMemory[i], nullptr);
-        vkDestroyBuffer(mainDevice.logicalDevice, modelDynamicUniformBuffer[i], nullptr);
-        vkFreeMemory(mainDevice.logicalDevice, modelDynamicUniformBufferMemory[i], nullptr);
+        //vkDestroyBuffer(mainDevice.logicalDevice, modelDynamicUniformBuffer[i], nullptr);
+        //vkFreeMemory(mainDevice.logicalDevice, modelDynamicUniformBufferMemory[i], nullptr);
     }
     for (size_t i = 0; i < MAX_FRAME_DRAWS; i++)
     {
@@ -403,6 +417,7 @@ void VulkanRenderer::createSwapChain()
 
 void VulkanRenderer::createRenderPass()
 {
+    //Attachments
     //Color Attachment of Render Pass
     VkAttachmentDescription colorAttachment = {};
     colorAttachment.format = swapChainImageFormat;
@@ -415,14 +430,34 @@ void VulkanRenderer::createRenderPass()
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    //Depth Attachment of render Pass
+    VkAttachmentDescription depthAttachment = {};
+    depthAttachment.format = depthFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+
+    //References
     VkAttachmentReference colorAttachmentReference = {};
     colorAttachmentReference.attachment = 0;
     colorAttachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference depthAttachmentReference = {};
+    depthAttachmentReference.attachment = 1;
+    depthAttachmentReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass = {};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; // RayTracing option is here
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentReference;
+    subpass.pDepthStencilAttachment = &depthAttachmentReference;
+
 
     std::array<VkSubpassDependency, 2> subpassDependencies;
 
@@ -446,10 +481,12 @@ void VulkanRenderer::createRenderPass()
     subpassDependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
     subpassDependencies[1].dependencyFlags = 0;
 
+    std::array<VkAttachmentDescription, 2 > renderPassAttachments = { colorAttachment,depthAttachment };
+
     VkRenderPassCreateInfo renderPassCreateInfo = {};
     renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassCreateInfo.attachmentCount = 1;
-    renderPassCreateInfo.pAttachments = &colorAttachment;
+    renderPassCreateInfo.attachmentCount = static_cast<uint32_t>(renderPassAttachments.size());
+    renderPassCreateInfo.pAttachments = renderPassAttachments.data();
     renderPassCreateInfo.subpassCount = 1;
     renderPassCreateInfo.pSubpasses = &subpass;
     renderPassCreateInfo.dependencyCount = static_cast<uint32_t>(subpassDependencies.size());
@@ -471,14 +508,14 @@ void VulkanRenderer::createDescriptorSetLayout()
     vpLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     vpLayoutBinding.pImmutableSamplers = nullptr; //For texture
 
-    VkDescriptorSetLayoutBinding modelLayoutBinding = {};
-    modelLayoutBinding.binding = 1;
-    modelLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    modelLayoutBinding.descriptorCount = 1;
-    modelLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    modelLayoutBinding.pImmutableSamplers = nullptr;
+    //VkDescriptorSetLayoutBinding modelLayoutBinding = {};
+    //modelLayoutBinding.binding = 1;
+    //modelLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    //modelLayoutBinding.descriptorCount = 1;
+    //modelLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    //modelLayoutBinding.pImmutableSamplers = nullptr;
 
-    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = { vpLayoutBinding, modelLayoutBinding };
+    std::vector<VkDescriptorSetLayoutBinding> layoutBindings = { vpLayoutBinding };
 
     VkDescriptorSetLayoutCreateInfo layoutCreateInfo = {};
     layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -490,6 +527,13 @@ void VulkanRenderer::createDescriptorSetLayout()
     {
         throw std::runtime_error("Failed to create a descriptor set layout");
     }
+}
+
+void VulkanRenderer::createPushConstantRange()
+{
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(Model);
 }
 
 void VulkanRenderer::createGraphicsPipeline()
@@ -629,8 +673,8 @@ void VulkanRenderer::createGraphicsPipeline()
     pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutCreateInfo.setLayoutCount = 1;
     pipelineLayoutCreateInfo.pSetLayouts = &descriptorSetLayout;
-    pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
-    pipelineLayoutCreateInfo.pPushConstantRanges = nullptr;
+    pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
 
     VkResult result = vkCreatePipelineLayout(mainDevice.logicalDevice, &pipelineLayoutCreateInfo, nullptr, &pipelineLayout);
     if (result != VK_SUCCESS)
@@ -638,7 +682,14 @@ void VulkanRenderer::createGraphicsPipeline()
         throw std::runtime_error("Failed to create Pipeline Layout");
     }
 
-    //Later set up depth stencil testing
+    // depth stencil testing
+    VkPipelineDepthStencilStateCreateInfo depthStencilCreateInfo = {};
+    depthStencilCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencilCreateInfo.depthTestEnable = VK_TRUE;
+    depthStencilCreateInfo.depthWriteEnable = VK_TRUE;
+    depthStencilCreateInfo.depthCompareOp = VK_COMPARE_OP_LESS; //Comparision operation that allows and overwrite
+    depthStencilCreateInfo.depthBoundsTestEnable = VK_FALSE;
+    depthStencilCreateInfo.stencilTestEnable = VK_FALSE; // to enable the stencilTest
 
 
     //Graphics Pipeline Creation 
@@ -653,7 +704,7 @@ void VulkanRenderer::createGraphicsPipeline()
     pipelineCreateInfo.pRasterizationState = &rasterizerCreateInfo;
     pipelineCreateInfo.pMultisampleState = &multisampleCreateInfo;
     pipelineCreateInfo.pColorBlendState = &colorBlendingCreateInfo;
-    pipelineCreateInfo.pDepthStencilState = nullptr; //Not yet
+    pipelineCreateInfo.pDepthStencilState = &depthStencilCreateInfo; //Not yet
     pipelineCreateInfo.layout = pipelineLayout; 
     pipelineCreateInfo.renderPass = renderPass; //Render pass description the pipeline is compatible with
     pipelineCreateInfo.subpass = 0;             //Subpass of the renderpass to use with pipeline
@@ -675,14 +726,27 @@ void VulkanRenderer::createGraphicsPipeline()
 
 }
 
+void VulkanRenderer::createDepthBufferImage()
+{
+    //With stencil buffer
+    depthFormat = chooseSupportedFormat({ VK_FORMAT_D32_SFLOAT_S8_UINT , VK_FORMAT_D32_SFLOAT , 
+                                                   VK_FORMAT_D24_UNORM_S8_UINT },VK_IMAGE_TILING_OPTIMAL, 
+                                                   VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+    depthBufferImage = createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &depthBufferImageMemory);
+
+    depthBufferImageView = createImageView(depthBufferImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+}
+
 void VulkanRenderer::createFrameBuffers()
 {
     swapchainFramebuffers.resize(swapchainImages.size());
 
     for (size_t i = 0; i < swapchainFramebuffers.size(); i++)
     {
-        std::array<VkImageView, 1> attachments = {
-            swapchainImages[i].imageView
+        std::array<VkImageView, 2> attachments = {
+            swapchainImages[i].imageView,
+            depthBufferImageView
         };
 
         VkFramebufferCreateInfo framebufferCreateInfo = {};
@@ -708,6 +772,7 @@ void VulkanRenderer::createCommandPool()
 
     VkCommandPoolCreateInfo poolInfo = {};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
 
     VkResult result = vkCreateCommandPool(mainDevice.logicalDevice, &poolInfo, nullptr, &graphicsCommandPool);
@@ -764,21 +829,21 @@ void VulkanRenderer::createUniformBuffers()
     VkDeviceSize vpBufferSize = sizeof(UBOViewProjection);
 
     //ModelBufferSize
-    VkDeviceSize modelBufferSize = modelUniformAllignment * MAX_OBJECTS;
+    //VkDeviceSize modelBufferSize = modelUniformAllignment * MAX_OBJECTS;
 
     vpUniformBuffer.resize(swapchainImages.size());
     vpUniformBufferMemory.resize(swapchainImages.size());
-    modelDynamicUniformBuffer.resize(swapchainImages.size());
-    modelDynamicUniformBufferMemory.resize(swapchainImages.size());
+    //modelDynamicUniformBuffer.resize(swapchainImages.size());
+    //modelDynamicUniformBufferMemory.resize(swapchainImages.size());
 
     for (size_t i = 0; i < swapchainImages.size(); i++)
     {
         createBuffer(mainDevice.physicalDevice, mainDevice.logicalDevice, vpBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &vpUniformBuffer[i], &vpUniformBufferMemory[i]);
-        createBuffer(mainDevice.physicalDevice, mainDevice.logicalDevice, modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            &modelDynamicUniformBuffer[i], &modelDynamicUniformBufferMemory[i]);
+        //createBuffer(mainDevice.physicalDevice, mainDevice.logicalDevice, modelBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+        //    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        //    &modelDynamicUniformBuffer[i], &modelDynamicUniformBufferMemory[i]);
     }
 }
 
@@ -789,12 +854,12 @@ void VulkanRenderer::createDescriptorPool()
     vpPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     vpPoolSize.descriptorCount = static_cast<uint32_t>(vpUniformBuffer.size());
     
-    //Model Projection Pool
-    VkDescriptorPoolSize modelPoolSize = {};
-    modelPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    modelPoolSize.descriptorCount = static_cast<uint32_t>(modelDynamicUniformBuffer.size());
+    ////Model Projection Pool
+    //VkDescriptorPoolSize modelPoolSize = {};
+    //modelPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+    //modelPoolSize.descriptorCount = static_cast<uint32_t>(modelDynamicUniformBuffer.size());
 
-    std::vector<VkDescriptorPoolSize> poolSizeList = { vpPoolSize, modelPoolSize };
+    std::vector<VkDescriptorPoolSize> poolSizeList = { vpPoolSize };
 
     VkDescriptorPoolCreateInfo poolCreateInfo = {};
     poolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -847,21 +912,21 @@ void VulkanRenderer::createDescriptorSets()
 
 
         //Model Projeciton Buffer info and data offset info
-        VkDescriptorBufferInfo modelBufferInfo = {};
-        modelBufferInfo.buffer = modelDynamicUniformBuffer[i];
-        modelBufferInfo.offset = 0;
-        modelBufferInfo.range = modelUniformAllignment; // this is dynamic it's gonna start from 0 and jump to the model block size
+        //VkDescriptorBufferInfo modelBufferInfo = {};
+        //modelBufferInfo.buffer = modelDynamicUniformBuffer[i];
+        //modelBufferInfo.offset = 0;
+        //modelBufferInfo.range = modelUniformAllignment; // this is dynamic it's gonna start from 0 and jump to the model block size
 
-        VkWriteDescriptorSet modelSetWrite = {};
-        modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        modelSetWrite.dstSet = descriptorSets[i];
-        modelSetWrite.dstBinding = 1;
-        modelSetWrite.dstArrayElement = 0;
-        modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-        modelSetWrite.descriptorCount = 1;
-        modelSetWrite.pBufferInfo = &modelBufferInfo;
+        //VkWriteDescriptorSet modelSetWrite = {};
+        //modelSetWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        //modelSetWrite.dstSet = descriptorSets[i];
+        //modelSetWrite.dstBinding = 1;
+        //modelSetWrite.dstArrayElement = 0;
+        //modelSetWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        //modelSetWrite.descriptorCount = 1;
+        //modelSetWrite.pBufferInfo = &modelBufferInfo;
 
-        std::vector<VkWriteDescriptorSet> descriptorSets = { vpSetWrite ,modelSetWrite };
+        std::vector<VkWriteDescriptorSet> descriptorSets = { vpSetWrite  };
 
         vkUpdateDescriptorSets(mainDevice.logicalDevice, static_cast<uint32_t>(descriptorSets.size()), descriptorSets.data(),
                                0, nullptr);
@@ -877,22 +942,23 @@ void VulkanRenderer::updateUniformBuffers(uint32_t imageIndex)
     memcpy(data, &uboViewProjection, sizeof(UBOViewProjection));
     vkUnmapMemory(mainDevice.logicalDevice, vpUniformBufferMemory[imageIndex]);
 
-    //Copy Model Data
-    for (size_t i = 0; i < meshList.size(); i++)
-    {
-        UBOModel* model = (UBOModel*)((uint32_t)modelTransferSpace + (i * modelUniformAllignment));
-        *model = meshList[i].getModel();
-    }
+    //For dynamic uniform Buffers
+    //Copy Model Data 
+    //for (size_t i = 0; i < meshList.size(); i++)
+    //{
+    //    UBOModel* model = (UBOModel*)((uint32_t)modelTransferSpace + (i * modelUniformAllignment));
+    //    *model = meshList[i].getModel();
+    //}
 
-    vkMapMemory(mainDevice.logicalDevice, modelDynamicUniformBufferMemory[imageIndex], 0, modelUniformAllignment*meshList.size(), 0, &data);
-    memcpy(data, modelTransferSpace, modelUniformAllignment * meshList.size());
-    vkUnmapMemory(mainDevice.logicalDevice, modelDynamicUniformBufferMemory[imageIndex]);
+    //vkMapMemory(mainDevice.logicalDevice, modelDynamicUniformBufferMemory[imageIndex], 0, modelUniformAllignment*meshList.size(), 0, &data);
+    //memcpy(data, modelTransferSpace, modelUniformAllignment * meshList.size());
+    //vkUnmapMemory(mainDevice.logicalDevice, modelDynamicUniformBufferMemory[imageIndex]);
 }
 
-void VulkanRenderer::recordCommand()
+void VulkanRenderer::recordCommand(uint32_t currentImage)
 {
     VkCommandBufferBeginInfo bufferBeginInfo = {};
-    bufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;    
+    bufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
     //only needed for Graphical Applications
     VkRenderPassBeginInfo renderPassBeginInfo = {};
@@ -900,56 +966,59 @@ void VulkanRenderer::recordCommand()
     renderPassBeginInfo.renderPass = renderPass;
     renderPassBeginInfo.renderArea.offset = { 0,0 };
     renderPassBeginInfo.renderArea.extent = swapChainExtent;
-    VkClearValue clearValues[] = {
-        {0.6f,0.65f,0.4f,1.0f}
-    };
-    renderPassBeginInfo.pClearValues = clearValues; //TODO: Add depth attachment here
-    renderPassBeginInfo.clearValueCount = 1;
+    std::array<VkClearValue, 2> clearValues = {};
+    clearValues[0].color = {{0.6f,0.65f,0.4f,1.0f}};
+    clearValues[1].depthStencil.depth = 1.0f;
+    renderPassBeginInfo.pClearValues = clearValues.data(); //List of clear values
+    renderPassBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 
-    for (size_t i = 0; i < commandBuffers.size(); i++)
-    {
-       renderPassBeginInfo.framebuffer = swapchainFramebuffers[i];
-       VkResult result = vkBeginCommandBuffer(commandBuffers[i], &bufferBeginInfo);
+       renderPassBeginInfo.framebuffer = swapchainFramebuffers[currentImage];
+       VkResult result = vkBeginCommandBuffer(commandBuffers[currentImage], &bufferBeginInfo);
        if (result != VK_SUCCESS)
        {
            throw std::runtime_error("Failed to start recording a Command Buffer");
        }
        //Start recording
        
-            vkCmdBeginRenderPass(commandBuffers[i], &renderPassBeginInfo,VK_SUBPASS_CONTENTS_INLINE);
-            //Begin Render Pass
+        vkCmdBeginRenderPass(commandBuffers[currentImage], &renderPassBeginInfo,VK_SUBPASS_CONTENTS_INLINE);
+        //Begin Render Pass
 
-                //Bind pipeline to be used in render pass
-                vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+            //Bind pipeline to be used in render pass
+            vkCmdBindPipeline(commandBuffers[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
                 
-                for (size_t j = 0; j < meshList.size(); j++)
-                {
-                    VkBuffer vertexBuffers[] = { meshList[j].getVertexBuffer()};
-                    VkDeviceSize offsets[] = { 0 };
-                    vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
+            for (size_t j = 0; j < meshList.size(); j++)
+            {
+                VkBuffer vertexBuffers[] = { meshList[j].getVertexBuffer()};
+                VkDeviceSize offsets[] = { 0 };
+                vkCmdBindVertexBuffers(commandBuffers[currentImage], 0, 1, vertexBuffers, offsets);
 
-                    vkCmdBindIndexBuffer(commandBuffers[i], meshList[j].getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
+                vkCmdBindIndexBuffer(commandBuffers[currentImage], meshList[j].getIndexBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-                    //Dynamic offset amount
-                    uint32_t dynamicOffset = static_cast<uint32_t> (modelUniformAllignment) * j; //Mult with current mesh graph
+                //Dynamic offset amount
+                //uint32_t dynamicOffset = static_cast<uint32_t> (modelUniformAllignment) * j; //Mult with current mesh graph
 
+                Model model = meshList[j].getModel();
+                vkCmdPushConstants(commandBuffers[currentImage], 
+                    pipelineLayout, 
+                    VK_SHADER_STAGE_VERTEX_BIT, 
+                    0, 
+                    sizeof(Model), 
+                    &model);
 
-                    vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
-                        0, 1, &descriptorSets[i], 1, &dynamicOffset);
+                vkCmdBindDescriptorSets(commandBuffers[currentImage], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                    0, 1, &descriptorSets[currentImage], 0, nullptr);
 
-                    //Execute pipeline
-                    vkCmdDrawIndexed(commandBuffers[i], meshList[j].getIndexCount(), 1, 0, 0, 0);
-                }
-            //End renderPass
-            vkCmdEndRenderPass(commandBuffers[i]);
+                //Execute pipeline
+                vkCmdDrawIndexed(commandBuffers[currentImage], meshList[j].getIndexCount(), 1, 0, 0, 0);
+            }
+        //End renderPass
+        vkCmdEndRenderPass(commandBuffers[currentImage]);
        //End recording
-       result = vkEndCommandBuffer(commandBuffers[i]);
+       result = vkEndCommandBuffer(commandBuffers[currentImage]);
        if (result != VK_SUCCESS)
        {
            throw std::runtime_error("Failed to stop recording a Command Buffer");
        }
-
-    }
 
 }
 
@@ -1001,18 +1070,18 @@ void VulkanRenderer::getPysicalDevice()
     VkPhysicalDeviceProperties deviceProperties;
     vkGetPhysicalDeviceProperties(mainDevice.physicalDevice,&deviceProperties);
 
-    minUniformBufferOffset = deviceProperties.limits.minUniformBufferOffsetAlignment;
+    //minUniformBufferOffset = deviceProperties.limits.minUniformBufferOffsetAlignment;
 }
 
-void VulkanRenderer::allocateDynamicBufferTransferSpace()
-{
-    //Calculate model allignment
-    modelUniformAllignment = sizeof(UBOModel) + (minUniformBufferOffset-1) 
-                             & ~(minUniformBufferOffset - 1);
-
-    //Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds Max Objects
-    modelTransferSpace = (UBOModel*) _aligned_malloc(modelUniformAllignment * MAX_OBJECTS,modelUniformAllignment);
-}
+//void VulkanRenderer::allocateDynamicBufferTransferSpace()
+//{
+//    //Calculate model allignment
+//    modelUniformAllignment = sizeof(UBOModel) + (minUniformBufferOffset-1) 
+//                             & ~(minUniformBufferOffset - 1);
+//
+//    //Create space in memory to hold dynamic buffer that is aligned to our required alignment and holds Max Objects
+//    modelTransferSpace = (UBOModel*) _aligned_malloc(modelUniformAllignment * MAX_OBJECTS,modelUniformAllignment);
+//}
 
 std::vector<const char*> VulkanRenderer::getRequriredExtensions()
 {
@@ -1253,6 +1322,28 @@ VkExtent2D VulkanRenderer::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& surf
 
 }
 
+VkFormat VulkanRenderer::chooseSupportedFormat(const std::vector<VkFormat>& formats, VkImageTiling tiling, VkFormatFeatureFlags featureFlags)
+{
+    //Loop throught the options and find compatible one
+    for (VkFormat format : formats)
+    {
+        VkFormatProperties properties;
+        vkGetPhysicalDeviceFormatProperties(mainDevice.physicalDevice, format, &properties);
+
+        if (tiling == VK_IMAGE_TILING_LINEAR && (properties.linearTilingFeatures & featureFlags) == featureFlags)
+        {
+            return format;
+        }
+        else if (tiling == VK_IMAGE_TILING_OPTIMAL && (properties.optimalTilingFeatures & featureFlags) == featureFlags)
+        {
+            return format;
+        }
+
+    }
+
+    throw std::runtime_error("Failed to find a matching format");
+}
+
 VkImageView VulkanRenderer::createImageView(VkImage image, VkFormat imageformat, VkImageAspectFlags aspectFlags)
 {
     VkImageViewCreateInfo viewCreateInfo = {};
@@ -1297,4 +1388,124 @@ VkShaderModule VulkanRenderer::createShaderModule(const std::vector<char>& code)
         throw std::runtime_error("Failed to create shader module");
     }
     return shaderModule;
+}
+
+VkImage VulkanRenderer::createImage(uint32_t witdh, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags useFlags, VkMemoryPropertyFlags propFlags, VkDeviceMemory* imageMemory)
+{
+    //Create Image
+
+    VkImageCreateInfo imageCreateInfo = {};
+    imageCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageCreateInfo.extent.width = witdh;
+    imageCreateInfo.extent.height = height;
+    imageCreateInfo.extent.depth = 1;
+    imageCreateInfo.mipLevels = 1;
+    imageCreateInfo.arrayLayers = 1;
+    imageCreateInfo.format = format;
+    imageCreateInfo.tiling = tiling;
+    imageCreateInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageCreateInfo.usage = useFlags;
+    imageCreateInfo.samples = VK_SAMPLE_COUNT_1_BIT; // For Multisampling
+    imageCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+
+    VkImage image;
+    VkResult result = vkCreateImage(mainDevice.logicalDevice, &imageCreateInfo, nullptr, &image);
+    if (result != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to create image");
+    }
+
+    //Create memory for Image
+
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(mainDevice.logicalDevice, image, &memoryRequirements);
+    VkMemoryAllocateInfo memoryAllocateInfo = {};
+    memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    memoryAllocateInfo.allocationSize = memoryRequirements.size;
+    memoryAllocateInfo.memoryTypeIndex = findMemoryTypeIndex(mainDevice.physicalDevice,memoryRequirements.memoryTypeBits,propFlags);
+
+    result = vkAllocateMemory(mainDevice.logicalDevice, &memoryAllocateInfo, nullptr, imageMemory);
+    if (result != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to allocate memory for Image");
+    }
+
+    //Connect memory to image
+    vkBindImageMemory(mainDevice.logicalDevice, image, *imageMemory, 0);
+
+    return image;
+}
+
+int VulkanRenderer::createTexture(std::string fileName)
+{
+    int width, height;
+    VkDeviceSize imageSize;
+    stbi_uc* imageData = loadTextureFile(fileName, &width, &height, &imageSize);
+
+    //create staging buffer to hold loaded date ready to copy to device
+    VkBuffer imageStagingBuffer;
+    VkDeviceMemory imageStagingBufferMemory;
+    createBuffer(mainDevice.physicalDevice, mainDevice.logicalDevice, imageSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 &imageStagingBuffer, &imageStagingBufferMemory);
+
+    void* data;
+    vkMapMemory(mainDevice.logicalDevice, imageStagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, imageData, static_cast<size_t>(imageSize));
+    vkUnmapMemory(mainDevice.logicalDevice, imageStagingBufferMemory);
+
+    stbi_image_free(imageData);
+
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
+
+    textureImage = createImage(width, height, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL,
+                               VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &textureImageMemory);
+
+    //Copy data to image
+
+    //Transition image to be dst for copy operation
+    transitionImageLayout(mainDevice.logicalDevice, graphicsQueue, graphicsCommandPool, textureImage,
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    //Copy Image data
+    copyImageBuffer(mainDevice.logicalDevice, graphicsQueue, graphicsCommandPool, imageStagingBuffer, textureImage, width, height);
+
+    //Transition image to be shader readable
+    transitionImageLayout(mainDevice.logicalDevice, graphicsQueue, graphicsCommandPool, textureImage,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    //Add texture data to vector for reference (texture manager)
+    textureImages.push_back(textureImage);
+    textureImagesMemory.push_back(textureImageMemory);
+
+    //Destroy staging buffers
+    vkDestroyBuffer(mainDevice.logicalDevice, imageStagingBuffer, nullptr);
+    vkFreeMemory(mainDevice.logicalDevice, imageStagingBufferMemory, nullptr);
+
+    //Return the index of new image
+    return textureImages.size() - 1;
+}
+
+stbi_uc* VulkanRenderer::loadTextureFile(std::string fileName, int* width, int* height, VkDeviceSize* imageSize)
+{
+    // Number of channels image uses
+    int channels;
+
+    std::string fileLocation = "Textures/" + fileName;
+
+    stbi_uc* image = stbi_load(fileLocation.c_str(), width, height, &channels, STBI_rgb_alpha);
+
+    if (!image)
+    {
+        throw std::runtime_error("Failed to load texture file (" + fileName + ")");
+    }
+
+    //Getting the values and multiplying with the number of channels which is 4 in this case
+    *imageSize = *width * *height * 4;
+
+    return image;
+
 }
