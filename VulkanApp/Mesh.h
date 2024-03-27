@@ -16,10 +16,12 @@ class Mesh
 public:
 	Mesh();
 	Mesh(VkPhysicalDevice newPhysicalDevice, VkDevice newDevice,VkQueue transferQueue, VkCommandPool transferCommandPool
-		,std::vector<Vertex> *vertices , std::vector<uint32_t> *indices);
+		,std::vector<Vertex> *vertices , std::vector<uint32_t> *indices, int textureID);
 
 	void setModel(glm::mat4 newModel);
 	Model getModel();
+
+	int getTextureID();
 
 	int getVertexCount();
 	VkBuffer getVertexBuffer();
@@ -35,6 +37,8 @@ public:
 private:
 
 	Model model;
+
+	int textID; // TODO: create a texture struct
 
 	int vertexCount;
 	VkBuffer vertexBuffer;

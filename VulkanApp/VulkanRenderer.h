@@ -69,13 +69,17 @@ private:
 	VkImageView depthBufferImageView;
 	VkFormat depthFormat;
 
+	VkSampler textureSampler;
+
 	//Descriptors
 	VkDescriptorSetLayout descriptorSetLayout;
+	VkDescriptorSetLayout samplerSetLayout;
 	VkPushConstantRange pushConstantRange;
 		
 	VkDescriptorPool descriptorPool;
-
 	std::vector<VkDescriptorSet> descriptorSets;
+
+	
 
 	std::vector<VkBuffer> vpUniformBuffer;
 	std::vector<VkDeviceMemory> vpUniformBufferMemory;
@@ -88,9 +92,14 @@ private:
 	//size_t modelUniformAllignment;
 	//UBOModel* modelTransferSpace;
 
-	//Assets (not optimal, have single device memory and images just refrences offsets in it)
+	//Assets
+	
 	std::vector<VkImage> textureImages;
 	std::vector<VkDeviceMemory> textureImagesMemory;
+	std::vector<VkImageView> textureImageViews;
+
+	VkDescriptorPool samplerDescriptorPool;
+	std::vector<VkDescriptorSet> samplerDescriptorSets;
 
 	//Pipeline
 	VkPipeline graphicsPipeline;
@@ -108,6 +117,7 @@ private:
 	//Utility
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
+
 
 
 	const std::vector<const char*> validationLayers = {
@@ -140,6 +150,7 @@ private:
 	void createCommandPool();
 	void createCommandBuffers();
 	void createSynchronisation();
+	void createTextureSampler();
 	
 	void createUniformBuffers();
 	void createDescriptorPool();
@@ -189,7 +200,9 @@ private:
 	VkImage createImage(uint32_t witdh, uint32_t height, VkFormat format, VkImageTiling tiling,
 		VkImageUsageFlags useFlags, VkMemoryPropertyFlags propFlags, VkDeviceMemory* imageMemory);
 
+	int createTextureImage(std::string fileName);
 	int createTexture(std::string fileName);
+	int createTextureDescriptor(VkImageView texutreImage);
 
 	//Loader Funcitons
 	stbi_uc* loadTextureFile(std::string fileName, int* width, int* height, VkDeviceSize* imageSize);

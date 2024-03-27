@@ -2,19 +2,23 @@
 
 Mesh::Mesh()
 {
-} 
+}
 
-Mesh::Mesh(VkPhysicalDevice newPhysicalDevice, VkDevice newDevice, VkQueue transferQueue, VkCommandPool transferCommandPool, std::vector<Vertex>* vertices, std::vector<uint32_t>* indices)
+Mesh::Mesh(VkPhysicalDevice newPhysicalDevice, VkDevice newDevice, VkQueue transferQueue, VkCommandPool transferCommandPool, std::vector<Vertex>* vertices, std::vector<uint32_t>* indices, int textureID)
 {
 	vertexCount = vertices->size();
 	indexCount = indices->size();
 	physicalDevice = newPhysicalDevice;
 	device = newDevice;
-	createVertexBuffer(transferQueue, transferCommandPool,vertices);
+	createVertexBuffer(transferQueue, transferCommandPool, vertices);
 	createIndexBuffer(transferQueue, transferCommandPool, indices);
 
 	model.model = glm::mat4(1.0f);
+	textID = textureID;
 }
+
+
+
 
 void Mesh::setModel(glm::mat4 newModel)
 {
@@ -24,6 +28,11 @@ void Mesh::setModel(glm::mat4 newModel)
 Model Mesh::getModel()
 {
 	return model;
+}
+
+int Mesh::getTextureID()
+{
+	return textID;
 }
 
 int Mesh::getVertexCount()
