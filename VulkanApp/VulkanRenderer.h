@@ -16,6 +16,7 @@
 
 #include "Utilities.h"
 #include "Mesh.h"
+#include "MeshModel.h"
 
 class VulkanRenderer
 {
@@ -25,6 +26,7 @@ public:
 	
 	int init(GLFWwindow* newWindow);
 
+	int createMeshModel(std::string modelFile);
 	void updateModel(int modelID, glm::mat4 newModel);
 
 	void draw();
@@ -38,7 +40,7 @@ private:
 	int currentFrame = 0;
 
 	//Scene Objects
-	std::vector<Mesh> meshList;
+	std::vector<MeshModel> modelList;
 
 	//Scen Settings
 	//Model View Projection
@@ -100,6 +102,7 @@ private:
 
 	VkDescriptorPool samplerDescriptorPool;
 	std::vector<VkDescriptorSet> samplerDescriptorSets;
+
 
 	//Pipeline
 	VkPipeline graphicsPipeline;
@@ -203,6 +206,8 @@ private:
 	int createTextureImage(std::string fileName);
 	int createTexture(std::string fileName);
 	int createTextureDescriptor(VkImageView texutreImage);
+
+
 
 	//Loader Funcitons
 	stbi_uc* loadTextureFile(std::string fileName, int* width, int* height, VkDeviceSize* imageSize);
